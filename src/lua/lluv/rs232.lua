@@ -4,10 +4,11 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
   local trace = false
 
-  local rs232 = require "rs232"
-  local wait  = require "lzmq.timer".sleep
-  local zmq   = require "lzmq"
-  local pp    = require "pp"
+  local rs232  = require "rs232"
+  local wait   = require "lzmq.timer".sleep
+  local zmq    = require "lzmq"
+  local ok, pp = pcall(require, "pp")
+  if not ok then pp = print end
 
   local p
 
@@ -148,6 +149,7 @@ function Device:__init(port_name, opt)
 end
 
 function Device:close(cb)
+  self:stop_read()
   if self._actor  then
     local actor, poller = self._actor, self._poller
     if self._actor:alive() then

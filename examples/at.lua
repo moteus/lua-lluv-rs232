@@ -1,7 +1,3 @@
-# lua-lluv-rs232
-
-##Usage
-```Lua
 local uv = require "lluv"
 uv.rs232 = require "lluv.rs232"
 
@@ -32,4 +28,3 @@ port:open(function(self, err, data)
 end)
 
 uv.run()
-```
