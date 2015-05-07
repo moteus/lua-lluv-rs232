@@ -20,7 +20,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local ok, pp = pcall(require, "pp")
   if not ok then pp = print end
 
-  local p
+  local p, reading
 
   local function open_port()
     local p, e = rs232.port(port_name, port_opt)
@@ -46,6 +46,8 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   end
 
   local function poll_serial()
+    if not reading then return true end
+
     for i = 1, 64 do
       local len = p:in_queue()
       if (not len) or len == 0 then break end
@@ -69,7 +71,17 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       trace = on == 'ON'
       pipe:sendx('RES', 'OK')
       return true
-    end
+    end;
+
+    STOP_READ = function()
+      reading = false
+      return true
+    end;
+
+    START_READ = function()
+      reading = true
+      return true
+    end;
   }
 
   local function poll_socket()
@@ -268,7 +280,7 @@ function Device:_start()
 
     if typ == 'RES' then
       local cb = self._queue:pop()
-      return cb(self, msg)
+      if cb then return cb(self, msg) end
     end
 
     if typ == 'TERM' then
@@ -282,11 +294,13 @@ end
 
 function Device:start_read(cb)
   self._read_cb = cb
+  self:_ioctl(nil, 'START_READ')
   return self:_mark_read()
 end
 
 function Device:stop_read()
   self._read_cb = nil
+  self:_ioctl(nil, 'STOP_READ')
   return self
 end
 
@@ -305,7 +319,6 @@ function Device:write(...)
 end
 
 function Device:_ioctl(cb, cmd, ...)
-  self._queue:push(cb)
   local ok, err = self._actor:sendx('CMD', cmd, ...)
   if not ok then
     if cb then
@@ -314,6 +327,9 @@ function Device:_ioctl(cb, cmd, ...)
     end
     return nil, err
   end
+
+  self._queue:push(cb and cb or false)
+  return self
 end
 
 function Device:trace(on, cb)
