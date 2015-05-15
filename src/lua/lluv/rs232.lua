@@ -82,6 +82,16 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       reading = true
       return true
     end;
+
+    FLUSH = function()
+      local ok, err = p:flush()
+      if not ok then
+        pipe:sendx('RES', 'RS232', tostring(err:no()))
+      else
+        pipe:sendx('RES', 'OK')
+      end
+      return true
+    end;
   }
 
   local function poll_socket()
@@ -176,18 +186,23 @@ function Device:close(cb)
     local actor, poller = self._actor, self._poller
     if self._actor:alive() then
       local timer
+
       self:_ioctl(function(...)
         actor:close()
         poller:close()
         timer:close()
         self._actor, self._poller = nil
-        if cb then cb(...) end
+        if cb then cb(...) cb = nil end
       end, 'TERM')
 
       timer = uv.timer():start(2000, function()
         actor:close()
         poller:close()
+        timer:close()
+        self._actor, self._poller = nil
+        if cb then cb(self) cb = nil end
       end)
+
     end
   end
 end
@@ -280,7 +295,7 @@ function Device:_start()
 
     if typ == 'RES' then
       local cb = self._queue:pop()
-      if cb then return cb(self, msg) end
+      if cb then return cb(self, msg, data) end
     end
 
     if typ == 'TERM' then
@@ -337,6 +352,16 @@ function Device:trace(on, cb)
     if not cb then return end
     cb(self, res)
   end, 'TRACE', on and 'ON' or 'OFF')
+end
+
+function Device:flush(cb)
+  self:_ioctl(function(self, res, info)
+    if not cb then return end
+    if res == 'OK' then return cb(self) end
+    local err = tonumber(info)
+    if msg == 'RS232' then err = rs232.error(err) end
+    return cb(self, err)
+  end, 'FLUSH')
 end
 
 end
