@@ -18,12 +18,11 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local zmq    = require "lzmq"
 
   local OK       = '\0'
-  local RES_TERM = '\3'
-  local RES_DATA = '\4'
-  local RES_CMD  = '\5'
-  local REQ_DATA = '\6'
-  local REQ_CMD  = '\7'
-
+  local RES_TERM = '\1'
+  local RES_DATA = '\2'
+  local RES_CMD  = '\3'
+  local REQ_DATA = '\4'
+  local REQ_CMD  = '\5'
 
   local logger, log_writer do
     local base_formatter = require "log.formatter.concat".new('')
@@ -138,11 +137,13 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     end;
 
     API[ "STOP_READ"      ] = function()
+      pipe:sendx(RES_CMD, OK)
       reading = false
       return true
     end;
 
     API[ "START_READ"     ] = function()
+      pipe:sendx(RES_CMD, OK)
       reading = true
       return true
     end;
@@ -161,7 +162,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
   local function poll_socket()
     -- can return nil/flase/true
-    local ok, err = pipe:poll(1)
+    local ok, err = pipe:poll(reading and 1 or 1000)
 
     -- we get error
     if ok == nil then
@@ -207,8 +208,11 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
   local function main()
     while true do
-      if not poll_serial() then break end
-      if not poll_socket() then break end
+      local ok, err = poll_serial()
+      if not ok then return nil, err end
+
+      local ok, err = poll_socket()
+      if not ok then return nil, err end
     end
   end
 
@@ -225,11 +229,11 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 end
 
 local OK       = '\0'
-local RES_TERM = '\3'
-local RES_DATA = '\4'
-local RES_CMD  = '\5'
-local REQ_DATA = '\6'
-local REQ_CMD  = '\7'
+local RES_TERM = '\1'
+local RES_DATA = '\2'
+local RES_CMD  = '\3'
+local REQ_DATA = '\4'
+local REQ_CMD  = '\5'
 
 local zth   = require "lzmq.threads"
 local uv    = require "lluv"
@@ -250,17 +254,28 @@ function Device:__init(port_name, opt)
     rts          = rs232.RS232_RTS_ON;
   }
 
-  self._port_name = port_name
-  self._port_opt  = opt
-  self._queue     = ut.Queue.new()
-  self._buffer    = ut.Buffer.new()
+  self._port_name  = port_name
+  self._port_opt   = opt
+  self._queue      = ut.Queue.new()
+  self._buffer     = ut.Buffer.new()
+  self._terminated = false
 
   return self
 end
 
 function Device:close(cb)
   self:stop_read()
+
   if self._actor  then
+    if self._terminated then
+      self._actor:close()
+      self._poller:close(function()
+        if cb then cb(self) end
+      end)
+      self._actor, self._poller = nil
+      return
+    end
+
     local actor, poller = self._actor, self._poller
     if self._actor:alive() then
       local timer
@@ -379,6 +394,7 @@ function Device:_start()
     if typ == RES_TERM then
       err = uv.error('LIBUV', uv.EOF)
       self._poll_error = err
+      self._terminated = true
       return self:_mark_read()
     end
 
