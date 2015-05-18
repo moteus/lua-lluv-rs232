@@ -1,3 +1,5 @@
+package.path = "../src/lua/?.lua;" .. package.path
+
 local uv = require "lluv"
 uv.rs232 = require "lluv.rs232"
 
@@ -10,18 +12,33 @@ local port = uv.rs232('COM3',{
   rts          = 'ON';
 })
 
-port:open(function(self, err, data)
+port:open(function(self, err, info, data)
   if err then
     print("Port open error:", err)
     return self:close()
   end
 
+  print("Port:", info)
+  print("Pending data:", data)
+
+  self:set_log_level('trace')
+
+  local buffer = ''
   self:start_read(function(self, err, data)
     if err then
       print("Port read error:", err)
       return self:close()
     end
+
     io.write(data)
+
+    buffer = buffer .. data
+    if buffer:find('\r\nOK\r\n', nil, true) then
+      port:close(function()
+        print("Port closed")
+      end)
+    end
+
   end)
 
   port:write('AT\r\n')
