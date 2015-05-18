@@ -17,6 +17,14 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local rs232  = require "rs232"
   local zmq    = require "lzmq"
 
+  local OK       = '\0'
+  local RES_TERM = '\3'
+  local RES_DATA = '\4'
+  local RES_CMD  = '\5'
+  local REQ_DATA = '\6'
+  local REQ_CMD  = '\7'
+
+
   local logger, log_writer do
     local base_formatter = require "log.formatter.concat".new('')
 
@@ -52,7 +60,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     local p, e = rs232.port(port_name, port_opt)
     if not p then
       logger.error("Can not open serial port:", e)
-      pipe:sendx('ERROR', 'RS232', tostring(e:no()))
+      pipe:sendx(RES_CMD, 'RS232', tostring(e:no()))
       return
     end
 
@@ -72,7 +80,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
     logger.info_dump(dump, "serial port init data:", buf)
 
-    pipe:sendx('OK', tostring(p), buf)
+    pipe:sendx(RES_CMD, OK, tostring(p), buf)
 
     return p
   end
@@ -87,7 +95,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       local data, err = p:read(len, 0)
       if data and #data > 0 then
         logger.trace_dump(dump, '<<', data)
-        pipe:sendx('\0', data)
+        pipe:sendx(RES_DATA, data)
       end
     end
     return true
@@ -97,7 +105,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
     API[ "SET VERBOSE"    ] = function (level)
       if level then logger.set_lvl(level) end
-      pipe:sendx('RES', 'OK')
+      pipe:sendx(RES_CMD, OK)
       return true
     end
 
@@ -108,24 +116,24 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
       writer, err = loadstring(writer)
       if not writer then
-        pipe:sendx('RES', 'LOG', tostring(err))
+        pipe:sendx(RES_CMD, 'LOG', tostring(err))
         return true
       end
       
       writer, err = writer()
       if not writer then
-        pipe:sendx('RES', 'LOG', tostring(err))
+        pipe:sendx(RES_CMD, 'LOG', tostring(err))
         return true
       end
 
-      pipe:sendx('RES', 'OK')
+      pipe:sendx(RES_CMD, OK)
       log_writer = writer
 
       return true
     end
 
     API[ "TERM"           ] = function()
-      pipe:sendx('RES', 'OK')
+      pipe:sendx(RES_CMD, OK)
       return false
     end;
 
@@ -142,9 +150,9 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     API[ "FLUSH"          ] = function()
       local ok, err = p:flush()
       if not ok then
-        pipe:sendx('RES', 'RS232', tostring(err:no()))
+        pipe:sendx(RES_CMD, 'RS232', tostring(err:no()))
       else
-        pipe:sendx('RES', 'OK')
+        pipe:sendx(RES_CMD, OK)
       end
       return true
     end;
@@ -160,7 +168,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       if err:no() == zmq.ETERM then return end
       if err:no() ~= zmq.EAGAIN then
         logger.fatal("ZMQ Unexpected poll error:", err)
-        return
+        return nil, err
       end
     end
 
@@ -169,13 +177,13 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     local typ, msg, a, b, c, d = pipe:recvx(zmq.DONTWAIT)
     if not typ then
       if msg:no() ~= zmq.ETERM then
-        logger.fatal("ZMQ Unexpected recv error:", err)
-      end
-      return
+        logger.fatal("ZMQ Unexpected recv error:", msg)
+      else msg = nil end
+      return nil, msg
     end
 
     -- sent data to serial port
-    if typ == '\0' then -- data
+    if typ == REQ_DATA then
       logger.trace_dump(dump, '>>', msg)
 
       local n, err = p:write(msg)
@@ -186,12 +194,12 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       return true
 
     -- command from actor
-    elseif typ == 'CMD' then
+    elseif typ == REQ_CMD then
       local api = API[msg]
       assert(api, msg)
-      if not api(a, b, c, d) then return end
-      return true
+      return api(a, b, c, d)
     end
+
   end
 
   p = open_port()
@@ -204,13 +212,24 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     end
   end
 
-  local ok, err = pcall(main)
-  if ok then err = '' end
+  local ok, err, err2 = pcall(main)
+  if ok then err = err2 or '' end
 
-  logger.info("port close: ", err)
+  if err and #err ~= 0 then
+    logger.fatal("abnormal close thread:", err)
+  else
+    logger.info("port close")
+  end
 
-  pipe:sendx('TERM', tostring(err))
+  pipe:sendx(RES_TERM, tostring(err))
 end
+
+local OK       = '\0'
+local RES_TERM = '\3'
+local RES_DATA = '\4'
+local RES_CMD  = '\5'
+local REQ_DATA = '\6'
+local REQ_CMD  = '\7'
 
 local zth   = require "lzmq.threads"
 local uv    = require "lluv"
@@ -285,26 +304,26 @@ function Device:open(cb)
       return cb(self, err)
     end
 
-    local typ, msg, data = self._actor:recvx()
+    local typ, msg, desc, data = self._actor:recvx()
     if not typ then
       self:close()
       return cb(self, msg)
     end
 
-    if typ == 'OK' then
-      assert(self._actor)
-      self:_start()
-      return cb(self, nil, msg, data)
-    end
+    if typ == RES_CMD then
+      if msg == OK then
+        assert(self._actor)
+        self:_start()
+        return cb(self, nil, desc, data)
+      end
 
-    if typ == 'ERROR' then
       self:close()
-      local err = tonumber(data)
+      local err = tonumber(desc)
       if msg == 'RS232' then err = rs232.error(err) end
       return cb(self, err)
     end
 
-    print('UNEXPECTED MESSAGE:', typ, msg, data)
+    print('UNEXPECTED MESSAGE:', typ)
     error('UNEXPECTED MESSAGE:' .. typ)
   end)
 end
@@ -347,17 +366,17 @@ function Device:_start()
       return self:_mark_read()
     end
 
-    if typ == '\0' then
+    if typ == RES_DATA then
       self._buffer:append(msg)
       return self:_mark_read()
     end
 
-    if typ == 'RES' then
+    if typ == RES_CMD then
       local cb = self._queue:pop()
       if cb then return cb(self, msg, data) end
     end
 
-    if typ == 'TERM' then
+    if typ == RES_TERM then
       err = uv.error('LIBUV', uv.EOF)
       self._poll_error = err
       return self:_mark_read()
@@ -389,11 +408,11 @@ function Device:_write(typ, msg, cb)
 end
 
 function Device:write(...)
-  return self:_write('\0', ...)
+  return self:_write(REQ_DATA, ...)
 end
 
 function Device:_ioctl(cb, cmd, ...)
-  local ok, err = self._actor:sendx('CMD', cmd, ...)
+  local ok, err = self._actor:sendx(REQ_CMD, cmd, ...)
   if not ok then
     if cb then
       uv.defer(cb, self, err)
@@ -411,7 +430,7 @@ function Device:set_log_level(level, cb)
 
   self:_ioctl(function(self, res, err)
     if not cb then return end
-    if res ~= 'OK' then res = nil end
+    if res ~= OK then res = nil end
     cb(self, res, err)
   end, 'SET VERBOSE', level)
 end
@@ -421,7 +440,7 @@ function Device:set_log_writer(writer, cb)
 
   self:_ioctl(function(self, res, err)
     if not cb then return end
-    if res ~= 'OK' then res = nil end
+    if res ~= OK then res = nil end
     cb(self, res, err)
   end, 'SET LOG WRITER', writer)
 end
@@ -429,7 +448,7 @@ end
 function Device:flush(cb)
   self:_ioctl(function(self, res, info)
     if not cb then return end
-    if res == 'OK' then return cb(self) end
+    if res == OK then return cb(self) end
     local err = tonumber(info)
     if msg == 'RS232' then err = rs232.error(err) end
     return cb(self, err)
