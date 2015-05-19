@@ -24,7 +24,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local REQ_DATA = '\4'
   local REQ_CMD  = '\5'
 
-  local logger, log_writer do
+  local LOG, log_writer do
     local base_formatter = require "log.formatter.concat".new('')
 
     local log_formatter = function(...)
@@ -33,7 +33,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
     log_writer = require "log.writer.stdout".new()
 
-    logger = LogLib.new('none',
+    LOG = LogLib.new('none',
       function(...) return log_writer and log_writer(...) end,
       log_formatter
     )
@@ -58,12 +58,12 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local function open_port()
     local p, e = rs232.port(port_name, port_opt)
     if not p then
-      logger.error("Can not open serial port:", e)
+      LOG.error("Can not open serial port:", e)
       pipe:sendx(RES_CMD, 'RS232', tostring(e:no()))
       return
     end
 
-    logger.info("serial port open: ", p)
+    LOG.info("serial port open: ", p)
 
     local buf = {}
     while true do
@@ -77,7 +77,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     end
     buf = table.concat(buf)
 
-    logger.info_dump(dump, "serial port init data:", buf)
+    LOG.info_dump(dump, "serial port init data:", buf)
 
     pipe:sendx(RES_CMD, OK, tostring(p), buf)
 
@@ -93,7 +93,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
 
       local data, err = p:read(len, 0)
       if data and #data > 0 then
-        logger.trace_dump(dump, '<<', data)
+        LOG.trace_dump(dump, '<<', data)
         pipe:sendx(RES_DATA, data)
       end
     end
@@ -103,7 +103,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local API = {} do
 
     API[ "SET VERBOSE"    ] = function (level)
-      if level then logger.set_lvl(level) end
+      if level then LOG.set_lvl(level) end
       pipe:sendx(RES_CMD, OK)
       return true
     end
@@ -168,7 +168,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     if ok == nil then
       if err:no() == zmq.ETERM then return end
       if err:no() ~= zmq.EAGAIN then
-        logger.fatal("ZMQ Unexpected poll error:", err)
+        LOG.fatal("ZMQ Unexpected poll error:", err)
         return nil, err
       end
     end
@@ -178,18 +178,18 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     local typ, msg, a, b, c, d = pipe:recvx(zmq.DONTWAIT)
     if not typ then
       if msg:no() ~= zmq.ETERM then
-        logger.fatal("ZMQ Unexpected recv error:", msg)
+        LOG.fatal("ZMQ Unexpected recv error:", msg)
       else msg = nil end
       return nil, msg
     end
 
     -- sent data to serial port
     if typ == REQ_DATA then
-      logger.trace_dump(dump, '>>', msg)
+      LOG.trace_dump(dump, '>>', msg)
 
       local n, err = p:write(msg)
       if n ~= #msg then
-        logger.error('Write error:', tostring(err), ' data size:', tostring(#msg), ' written:', n)
+        LOG.error('Write error:', tostring(err), ' data size:', tostring(#msg), ' written:', n)
       end
 
       return true
@@ -220,9 +220,9 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   if ok then err = err2 or '' end
 
   if err and #err ~= 0 then
-    logger.fatal("abnormal close thread:", err)
+    LOG.fatal("abnormal close thread:", err)
   else
-    logger.info("port close")
+    LOG.info("port close")
   end
 
   pipe:sendx(RES_TERM, tostring(err))
