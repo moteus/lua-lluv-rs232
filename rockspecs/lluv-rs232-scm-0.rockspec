@@ -1,0 +1,39 @@
+package = "lluv-rs232"
+version = "scm-0"
+
+source = {
+  url = "https://github.com/moteus/lua-lluv-rs232/archive/master.zip",
+  dir = "lua-lluv-rs232-master",
+}
+
+description = {
+  summary    = "Serial port communication library for lluv library",
+  homepage   = "https://github.com/moteus/lua-lluv-rs232",
+  license    = "MIT/X11",
+  maintainer = "Alexey Melnichuk",
+  detailed   = [[
+  ]],
+}
+
+dependencies = {
+  'lua >= 5.1, < 5.4',
+  'lluv >= 0.1.1',
+  'rs232',
+  'lluv-poll-zmq',
+  'lzmq >= 0.4.1',
+  'llthreads2',
+  'lua-log',
+}
+
+external_dependencies = {
+}
+
+build = {
+  copy_directories = {'examples'},
+
+  type = "builtin",
+
+  modules = {
+    ['lluv.rs232'] = 'src/lua/lluv/rs232.lua',
+  }
+}

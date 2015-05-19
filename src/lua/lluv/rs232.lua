@@ -44,7 +44,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       :gsub("\r", "\\r")
       :gsub("\n", "\\n")
       :gsub("\t", "\\t")
-      :gsub("[%z\001-\031]", function(ch)
+      :gsub("[%z\001-\031\127-\255]", function(ch)
         return string.format("\\%.3d", string.byte(ch))
       end))
   end
@@ -308,6 +308,8 @@ function Device:open(cb)
     self._port_name,
     self._port_opt
   ):start()
+
+  self._terminated = false
 
   self._poller = uv.poll_zmq(self._actor)
 
