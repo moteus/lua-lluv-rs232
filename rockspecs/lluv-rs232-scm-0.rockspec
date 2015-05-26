@@ -21,7 +21,7 @@ dependencies = {
   'rs232',
   'lluv-poll-zmq',
   'lzmq >= 0.4.1',
-  'llthreads2',
+  'lua-llthreads2',
   'lua-log',
 }
 
