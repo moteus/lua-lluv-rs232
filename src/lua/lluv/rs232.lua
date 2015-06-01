@@ -87,6 +87,12 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local function poll_serial()
     if not reading then return true end
 
+    local data, err = p:read(128, 100)
+    if data and #data > 0 then
+      LOG.trace_dump(dump, '<<', data)
+      pipe:sendx(RES_DATA, data)
+    else return true end
+
     for i = 1, 64 do
       local len = p:in_queue()
       if (not len) or len == 0 then break end
@@ -340,7 +346,6 @@ function Device:open(cb)
       return cb(self, err)
     end
 
-    print('UNEXPECTED MESSAGE:', typ)
     error('UNEXPECTED MESSAGE:' .. typ)
   end)
 end
