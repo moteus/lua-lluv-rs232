@@ -34,6 +34,7 @@ build = {
   type = "builtin",
 
   modules = {
-    ['lluv.rs232'] = 'src/lua/lluv/rs232.lua',
+    ['lluv.rs232'   ] = 'src/lua/lluv/rs232.lua',
+    ['lluv.rs232.co'] = 'src/lua/lluv/rs232/co.lua',
   }
 }
