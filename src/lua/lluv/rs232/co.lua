@@ -176,7 +176,9 @@ function CoRs232:read(len, timeout, forced)
     local ok, err = self:_yield()
     if not ok then
       self:_stop("read")
-      if err == 'timeout' then return '' end
+      if err == 'timeout' then
+        return read_most(self._buf, len)
+      end
       return nil, err
     end
   end
@@ -201,7 +203,8 @@ function CoRs232:write(data)
   if not ok then
     return nil, self._err
   end
-  return ok, err
+
+  return self
 end
 
 function CoRs232:open()
