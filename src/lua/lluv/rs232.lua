@@ -56,7 +56,7 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local p, reading
 
   local function open_port()
-    local p, e = rs232.port(port_name, port_opt)
+    local p, e = rs232.port(port_name, port_opt):open()
     if not p then
       LOG.error("Can not open serial port:", e)
       pipe:sendx(RES_CMD, 'RS232', tostring(e:no()))
