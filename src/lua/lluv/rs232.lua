@@ -137,29 +137,51 @@ local function zmq_device_poller(pipe, port_name, port_opt)
       return true
     end
 
+    API[ "OPEN"           ] = function()
+      if not p then
+        p = open_port()
+      else
+        pipe:sendx(RES_CMD, OK)
+      end
+
+      return true
+    end;
+
     API[ "TERM"           ] = function()
       pipe:sendx(RES_CMD, OK)
       return false
     end;
 
     API[ "STOP_READ"      ] = function()
-      pipe:sendx(RES_CMD, OK)
-      reading = false
+      if not p then
+        pipe:sendx(RES_CMD, 'RS232', rs232.RS232_ERR_PORT_CLOSED)
+      else
+        pipe:sendx(RES_CMD, OK)
+        reading = false
+      end
       return true
     end;
 
     API[ "START_READ"     ] = function()
-      pipe:sendx(RES_CMD, OK)
-      reading = true
+      if not p then
+        pipe:sendx(RES_CMD, 'RS232', rs232.RS232_ERR_PORT_CLOSED)
+      else
+        pipe:sendx(RES_CMD, OK)
+        reading = true
+      end
       return true
     end;
 
     API[ "FLUSH"          ] = function()
-      local ok, err = p:flush()
-      if not ok then
-        pipe:sendx(RES_CMD, 'RS232', tostring(err:no()))
+      if not p then
+        pipe:sendx(RES_CMD, 'RS232', rs232.RS232_ERR_PORT_CLOSED)
       else
-        pipe:sendx(RES_CMD, OK)
+        local ok, err = p:flush()
+        if not ok then
+          pipe:sendx(RES_CMD, 'RS232', tostring(err:no()))
+        else
+          pipe:sendx(RES_CMD, OK)
+        end
       end
       return true
     end;
@@ -208,9 +230,6 @@ local function zmq_device_poller(pipe, port_name, port_opt)
     end
 
   end
-
-  p = open_port()
-  if not p then return end
 
   local function main()
     while true do
@@ -265,8 +284,14 @@ function Device:__init(port_name, opt)
   self._queue      = ut.Queue.new()
   self._buffer     = ut.Buffer.new()
   self._terminated = false
+  self._actor      = zth.xactor(
+    zmq_device_poller,
+    self._port_name,
+    self._port_opt
+  ):start()
+  self._poller     = uv.poll_zmq(self._actor)
 
-  return self
+  return self:_start()
 end
 
 function Device:close(cb)
@@ -306,48 +331,18 @@ function Device:close(cb)
   end
 end
 
+local function decode_cmd_reponse(res, info)
+  if res == OK then return nil, info end
+  if res == 'RS232' then return rs232.error(tonumber(err)) end
+  return info
+end
+
 function Device:open(cb)
-  if self._actor then return end
+  self:_ioctl(function(self, res, info)
+    if not cb then return end
+    cb(self, decode_cmd_reponse(res, info))
+  end, 'OPEN')
 
-  self._actor = zth.xactor(
-    zmq_device_poller,
-    self._port_name,
-    self._port_opt
-  ):start()
-
-  self._terminated = false
-
-  self._poller = uv.poll_zmq(self._actor)
-
-  self._poller:start(function(handle, err, pipe)
-    self._poller:stop()
-
-    if err then
-      self:close()
-      return cb(self, err)
-    end
-
-    local typ, msg, desc, data = self._actor:recvx()
-    if not typ then
-      self:close()
-      return cb(self, msg)
-    end
-
-    if typ == RES_CMD then
-      if msg == OK then
-        assert(self._actor)
-        self:_start()
-        return cb(self, nil, desc, data)
-      end
-
-      self:close()
-      local err = tonumber(desc)
-      if msg == 'RS232' then err = rs232.error(err) end
-      return cb(self, err)
-    end
-
-    error('UNEXPECTED MESSAGE:' .. typ)
-  end)
 end
 
 function Device:_do_read()
@@ -395,7 +390,8 @@ function Device:_start()
 
     if typ == RES_CMD then
       local cb = self._queue:pop()
-      if cb then return cb(self, msg, data) end
+      if cb then cb(self, msg, data) end
+      return
     end
 
     if typ == RES_TERM then
@@ -406,6 +402,8 @@ function Device:_start()
     end
 
   end)
+
+  return self
 end
 
 function Device:start_read(cb)
@@ -453,8 +451,7 @@ function Device:set_log_level(level, cb)
 
   self:_ioctl(function(self, res, err)
     if not cb then return end
-    if res ~= OK then res = nil end
-    cb(self, res, err)
+    cb(self, decode_cmd_reponse(res, info))
   end, 'SET VERBOSE', level)
 end
 
@@ -463,18 +460,14 @@ function Device:set_log_writer(writer, cb)
 
   self:_ioctl(function(self, res, err)
     if not cb then return end
-    if res ~= OK then res = nil end
-    cb(self, res, err)
+    cb(self, decode_cmd_reponse(res, info))
   end, 'SET LOG WRITER', writer)
 end
 
 function Device:flush(cb)
   self:_ioctl(function(self, res, info)
     if not cb then return end
-    if res == OK then return cb(self) end
-    local err = tonumber(info)
-    if msg == 'RS232' then err = rs232.error(err) end
-    return cb(self, err)
+    cb(self, decode_cmd_reponse(res, info))
   end, 'FLUSH')
 end
 

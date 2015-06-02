@@ -1,7 +1,7 @@
 package.path = "../src/lua/?.lua;" .. package.path
 
-control_port = arg[1] or CONTROL_PORT or 'CNCB1'
-data_port    = arg[2] or DATA_PORT or 'CNCB0'
+local control_port = arg[1] or CONTROL_PORT or 'CNCB1'
+local data_port    = arg[2] or DATA_PORT or 'CNCB0'
 
 local uv        = require "lluv"
 local ut        = require "lluv.utils"
@@ -71,9 +71,9 @@ local function reconnect()
   end
 end
 
-local ENABLE = false
+local ENABLE = true
 
-local _ENV = TEST_CASE'echo' if ENABLE or true then
+local _ENV = TEST_CASE'echo' if ENABLE then
 local it = IT(_ENV or _M)
 
 function setup()
@@ -106,7 +106,7 @@ test(1024)
 
 end
 
-local _ENV = TEST_CASE'read timeout forced' if ENABLE or true then
+local _ENV = TEST_CASE'read timeout forced' if ENABLE then
 local it = IT(_ENV or _M)
 
 function setup()

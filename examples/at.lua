@@ -12,6 +12,8 @@ local port = uv.rs232('COM3',{
   rts          = 'ON';
 })
 
+port:set_log_level('trace')
+
 port:open(function(self, err, info, data)
   if err then
     print("Port open error:", err)
@@ -20,8 +22,6 @@ port:open(function(self, err, info, data)
 
   print("Port:", info)
   print("Pending data:", data)
-
-  self:set_log_level('trace')
 
   local buffer = ''
   self:start_read(function(self, err, data)
