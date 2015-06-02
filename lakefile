@@ -1,0 +1,20 @@
+PROJECT = 'lluv'
+
+INITLAKEFILE()
+
+DEFINES = L{DEFINES, 'RS232_EXPORT'}
+
+install = target('install', {
+  file.group{odir=LIBDIR;  src = J('src', 'lua'), recurse = true    };
+  file.group{odir=TESTDIR; src = J('.',  'test'), recurse = true    };
+})
+
+target('test', install, function()
+  if spawn(J(TESTDIR, 'testsrv.lua'), TESTDIR) then
+    run_test(TESTDIR, J(TESTDIR, 'utestcli.lua'))
+  end
+
+  if not test_summary() then
+    quit("test fail")
+  end
+end)
