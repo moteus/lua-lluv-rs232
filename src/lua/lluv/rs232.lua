@@ -333,7 +333,7 @@ end
 
 local function decode_cmd_reponse(res, info)
   if res == OK then return nil, info end
-  if res == 'RS232' then return rs232.error(tonumber(err)) end
+  if res == 'RS232' then return rs232.error(tonumber(info)) end
   return info
 end
 
@@ -449,7 +449,7 @@ end
 function Device:set_log_level(level, cb)
   if level == false then level = 'none' end
 
-  self:_ioctl(function(self, res, err)
+  self:_ioctl(function(self, res, info)
     if not cb then return end
     cb(self, decode_cmd_reponse(res, info))
   end, 'SET VERBOSE', level)
@@ -458,7 +458,7 @@ end
 function Device:set_log_writer(writer, cb)
   assert(type(writer) == 'string')
 
-  self:_ioctl(function(self, res, err)
+  self:_ioctl(function(self, res, info)
     if not cb then return end
     cb(self, decode_cmd_reponse(res, info))
   end, 'SET LOG WRITER', writer)
