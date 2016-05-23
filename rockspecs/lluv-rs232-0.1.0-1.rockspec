@@ -1,5 +1,5 @@
 package = "lluv-rs232"
-version = "scm-0"
+version = "0.1.0-1"
 
 source = {
   url = "https://github.com/moteus/lua-lluv-rs232/archive/v0.1.0.zip",
