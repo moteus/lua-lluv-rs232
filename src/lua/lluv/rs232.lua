@@ -2,7 +2,7 @@
 --
 --  Author: Alexey Melnichuk <alexeymelnichuck@gmail.com>
 --
---  Copyright (C) 2014 Alexey Melnichuk <alexeymelnichuck@gmail.com>
+--  Copyright (C) 2014-2016 Alexey Melnichuk <alexeymelnichuck@gmail.com>
 --
 --  Licensed according to the included 'LICENSE' document
 --
@@ -474,7 +474,12 @@ end
 end
 ---------------------------------------------------------------
 
-return setmetatable({},{
+return setmetatable({
+  _NAME      = "lluv-rs232";
+  _VERSION   = "0.1.0";
+  _COPYRIGHT = "Copyright (C) 2014-2016 Alexey Melnichuk";
+  _LICENSE   = "MIT";
+},{
   __call = function(_, ...)
     return Device.new(...)
   end;
