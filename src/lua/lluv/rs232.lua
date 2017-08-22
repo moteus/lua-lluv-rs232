@@ -24,6 +24,8 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local REQ_DATA = '\4'
   local REQ_CMD  = '\5'
 
+  pipe:send(OK, zmq.DONTWAIT)
+
   local LOG, log_writer do
     local base_formatter = require "log.formatter.concat".new('')
 
@@ -260,6 +262,7 @@ local RES_CMD  = '\3'
 local REQ_DATA = '\4'
 local REQ_CMD  = '\5'
 
+local zmq   = require "lzmq"
 local zth   = require "lzmq.threads"
 local uv    = require "lluv"
 local ut    = require "lluv.utils"
@@ -290,6 +293,9 @@ function Device:__init(port_name, opt)
     self._port_opt
   ):start()
   self._poller     = uv.poll_zmq(self._actor)
+
+  -- sync with child thread
+  self._actor:recvx()
 
   return self:_start()
 end
@@ -338,11 +344,11 @@ local function decode_cmd_reponse(res, info)
 end
 
 function Device:open(cb)
-  self:_ioctl(function(self, res, info)
+  self:_ioctl(function(self, err, res, info)
     if not cb then return end
+    if err then return cb(self, err) end
     cb(self, decode_cmd_reponse(res, info))
   end, 'OPEN')
-
 end
 
 function Device:_do_read()
@@ -390,7 +396,7 @@ function Device:_start()
 
     if typ == RES_CMD then
       local cb = self._queue:pop()
-      if cb then cb(self, msg, data) end
+      if cb then cb(self, nil, msg, data) end
       return
     end
 
@@ -400,7 +406,6 @@ function Device:_start()
       self._terminated = true
       return self:_mark_read()
     end
-
   end)
 
   return self
@@ -433,7 +438,8 @@ function Device:write(...)
 end
 
 function Device:_ioctl(cb, cmd, ...)
-  local ok, err = self._actor:sendx(REQ_CMD, cmd, ...)
+  local ok, err = self._actor:send_more(REQ_CMD, zmq.DONTWAIT)
+  if ok then ok, err = self._actor:sendx(cmd, ...) end
   if not ok then
     if cb then
       uv.defer(cb, self, err)
@@ -449,8 +455,9 @@ end
 function Device:set_log_level(level, cb)
   if level == false then level = 'none' end
 
-  self:_ioctl(function(self, res, info)
+  self:_ioctl(function(self, err, res, info)
     if not cb then return end
+    if err then return cb(self, err) end
     cb(self, decode_cmd_reponse(res, info))
   end, 'SET VERBOSE', level)
 end
@@ -465,8 +472,9 @@ function Device:set_log_writer(writer, cb)
 end
 
 function Device:flush(cb)
-  self:_ioctl(function(self, res, info)
+  self:_ioctl(function(self, err, res, info)
     if not cb then return end
+    if err then return cb(self, err) end
     cb(self, decode_cmd_reponse(res, info))
   end, 'FLUSH')
 end
