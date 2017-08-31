@@ -246,6 +246,10 @@ local function zmq_device_poller(pipe, port_name, port_opt)
   local ok, err, err2 = pcall(main)
   if ok then err = err2 or '' end
 
+  if p then
+    p:close()
+  end
+
   if err and #err ~= 0 then
     LOG.fatal("abnormal close thread:", err)
   else

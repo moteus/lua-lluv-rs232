@@ -20,7 +20,7 @@ port:open(function(self, err, info, data)
     return self:close()
   end
 
-  print("Port:", info)
+  print("Port:", info, err)
   print("Pending data:", data)
 
   local buffer = ''
